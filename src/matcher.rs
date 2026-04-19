@@ -13,6 +13,8 @@ pub struct BanknoteQuery {
     pub currency: Option<String>,
     /// From vision: portrait name
     pub portrait: Option<String>,
+    /// From file path: issuing bank (e.g. "North of Scotland Bank Limited")
+    pub issuing_bank: Option<String>,
 }
 
 impl BanknoteQuery {
@@ -24,6 +26,7 @@ impl BanknoteQuery {
             variant: b.variant,
             currency: vision.and_then(|v| v.currency.clone()),
             portrait: vision.and_then(|v| v.portrait.clone()),
+            issuing_bank: b.issuing_bank.clone(),
         }
     }
 }
@@ -101,6 +104,23 @@ fn build_search_query(query: &BanknoteQuery) -> String {
     }
 }
 
+/// Normalize a bank name for fuzzy comparison:
+///   - lowercase
+///   - strip common corporate suffixes (Ltd, Limited, plc, Inc, Company, Co, &)
+///   - collapse punctuation/whitespace
+fn normalize_bank(s: &str) -> String {
+    let lower = s.to_lowercase();
+    let cleaned: String = lower
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect();
+    cleaned
+        .split_whitespace()
+        .filter(|w| !matches!(*w, "ltd" | "limited" | "plc" | "inc" | "co" | "company" | "the" | "of"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn format_denomination(d: f64) -> String {
     if d.fract() == 0.0 {
         format!("{}", d as i64)
@@ -127,7 +147,7 @@ fn normalize_issuer(country: &str) -> String {
         "africa_louest" => "bceao",
         "africa_occidentale" => "aof",
         "africa_west_british" => "british-west-africa",
-        "albania" => "albania",
+        "albania" => "albania_section",
         "algeria" => "algerie",
         "america" | "usa" | "us" | "united_states" => "united-states",
         "andorra" => "andorra",
@@ -487,6 +507,31 @@ fn score_candidate(query: &BanknoteQuery, title: &str, detail: &TypeDetail) -> u
         }
     }
 
+    // Issuing bank match: hard filter when set on the query.
+    // Numista's search API ignores the issuing_entity param, so we filter here.
+    if let Some(bank) = &query.issuing_bank {
+        let wanted = normalize_bank(bank);
+        let candidate = detail
+            .issuing_entity
+            .as_ref()
+            .map(|e| normalize_bank(&e.name));
+        match candidate {
+            Some(c) if c.contains(&wanted) || wanted.contains(&c) => {
+                score += 100;
+            }
+            Some(_) => return 0,
+            None => {
+                // No issuing_entity on the candidate — fall back to title match
+                let title_norm = normalize_bank(title);
+                if title_norm.contains(&wanted) {
+                    score += 100;
+                } else {
+                    return 0;
+                }
+            }
+        }
+    }
+
     // Portrait match (from vision)
     if let Some(portrait) = &query.portrait {
         if let Some(obverse) = &detail.obverse {
@@ -538,6 +583,7 @@ mod tests {
             variant: None,
             currency: Some("Escudos".into()),
             portrait: None,
+            issuing_bank: None,
         };
         assert_eq!(build_search_query(&q), "5 Escudos 1914");
 
@@ -548,6 +594,7 @@ mod tests {
             variant: None,
             currency: None,
             portrait: None,
+            issuing_bank: None,
         };
         assert_eq!(build_search_query(&q2), "0.50 1918");
     }

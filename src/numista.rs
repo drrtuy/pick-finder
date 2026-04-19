@@ -31,12 +31,19 @@ pub struct TypeDetail {
     pub url: Option<String>,
     pub category: Option<String>,
     pub issuer: Option<Issuer>,
+    pub issuing_entity: Option<IssuingEntity>,
     pub min_year: Option<i32>,
     pub max_year: Option<i32>,
     pub value: Option<Value>,
     pub obverse: Option<SideDescription>,
     pub reverse: Option<SideDescription>,
     pub references: Option<Vec<Reference>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct IssuingEntity {
+    pub id: Option<u64>,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

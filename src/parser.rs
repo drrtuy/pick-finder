@@ -14,6 +14,11 @@ pub struct BanknoteFile {
     pub variant: Option<u16>,
     pub side: Side,
     pub path: PathBuf,
+    /// Issuing bank, extracted from the parent directory when it differs from
+    /// the country directory. E.g. for
+    /// `/.../Scotland/North_of_Scotland_Bank_Limited/Scotland-0020-1930-A.jpg`
+    /// this will be `Some("North of Scotland Bank Limited")`.
+    pub issuing_bank: Option<String>,
 }
 
 /// Parse a banknote filename into structured data.
@@ -62,6 +67,14 @@ pub fn parse_banknote_file(path: &Path) -> Option<BanknoteFile> {
         _ => return None,
     };
 
+    // Issuing bank = immediate parent directory, if it differs from country
+    let issuing_bank = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .filter(|n| *n != country)
+        .map(|n| n.replace('_', " "));
+
     Some(BanknoteFile {
         country,
         denomination,
@@ -69,6 +82,7 @@ pub fn parse_banknote_file(path: &Path) -> Option<BanknoteFile> {
         variant,
         side,
         path: path.to_path_buf(),
+        issuing_bank,
     })
 }
 
