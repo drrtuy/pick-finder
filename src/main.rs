@@ -25,7 +25,7 @@ struct Cli {
     #[arg(short = 'o', long)]
     openai_key: Option<String>,
 
-    /// Output tab-separated lines: filename<TAB>Pick# (best match only)
+    /// Output tab-separated lines: filename<TAB>country<TAB>denomination<TAB>currency<TAB>year<TAB>Pick# (best match only)
     #[arg(long)]
     tsv: bool,
 }
@@ -57,9 +57,32 @@ fn find_matching_files(prefix: &str) -> Vec<PathBuf> {
     files
 }
 
+fn caption_has_pick(path: &Path) -> bool {
+    let Ok(output) = std::process::Command::new("exiftool")
+        .args(["-b", "-Caption-Abstract"])
+        .arg(path)
+        .output()
+    else { return false; };
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.to_ascii_lowercase().contains("pick#")
+}
+
 fn main() {
     let cli = Cli::parse();
-    let files = find_matching_files(&cli.prefix);
+    let quiet = cli.tsv;
+    let files: Vec<PathBuf> = find_matching_files(&cli.prefix)
+        .into_iter()
+        .filter(|f| {
+            if caption_has_pick(f) {
+                if !quiet {
+                    println!("Skipping {} (already has Pick#)", f.display());
+                }
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
 
     // Step 1: Parse filenames
     let banknotes: Vec<BanknoteFile> = files
@@ -133,12 +156,12 @@ fn main() {
     // Step 3–5: Search Numista, extract Pick#, filter & rank
     let client = numista::NumistaClient::new(&cli.api_key);
 
-    if !cli.tsv {
+    if !quiet {
         println!("\nSearching Numista for {} unique banknote type(s)...\n", unique.len());
     }
 
-    // Collect results: (banknote, best pick string)
-    let mut results: Vec<(&BanknoteFile, String)> = vec![];
+    // Collect results: (banknote, best pick string, currency label)
+    let mut results: Vec<(&BanknoteFile, String, String)> = vec![];
 
     for b in &unique {
         let key = (b.country.clone(), b.denomination.to_bits(), b.year);
@@ -153,9 +176,10 @@ fn main() {
             .cloned()
             .unwrap_or_default();
 
-        results.push((b, best_pick.clone()));
+        let currency_for_tsv = query.currency.as_deref().unwrap_or("").to_string();
+        results.push((b, best_pick.clone(), currency_for_tsv));
 
-        if !cli.tsv {
+        if !quiet {
             let currency_label = query.currency.as_deref().unwrap_or("(unknown currency)");
             println!(
                 "  {} {} {} ({}):",
@@ -190,9 +214,12 @@ fn main() {
 
     // TSV output: one line per unique (country, denomination, year), first obverse filename
     if cli.tsv {
-        for (b, pick) in &results {
+        for (b, pick, currency) in &results {
             let filename = b.path.file_name().unwrap_or_default().to_string_lossy();
-            println!("{filename}\t{pick}");
+            println!(
+                "{filename}\t{}\t{}\t{currency}\t{}\t{pick}",
+                b.country, b.denomination, b.year
+            );
         }
     }
 }

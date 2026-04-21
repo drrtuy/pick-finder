@@ -445,7 +445,7 @@ fn extract_pick_numbers(detail: &TypeDetail) -> Vec<String> {
             refs.iter()
                 .filter(|r| is_pick_reference(r))
                 .filter_map(|r| r.number.as_ref())
-                .map(|n| format!("P#{n}"))
+                .map(|n| format!("Pick#{n}"))
                 .collect()
         })
         .unwrap_or_default()
