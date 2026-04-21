@@ -228,6 +228,7 @@ fn normalize_issuer(country: &str) -> String {
         "falkland" => "iles_malouines",
         "faroarna" => "iles_feroe",
         "fiji" => "fiji",
+        "finland" => "finlande",
         "france" => "france",
         "french_antilles" => "antilles_francaises",
         // G
